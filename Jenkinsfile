@@ -74,8 +74,8 @@ node {
                         description: 'The digest of the release. Example value: "sha256=f28cbabd1227352fe704a00df796a4511880174042dece96233036a10ac61639"\nCan be taken from the Release job.',
                         $class: 'hudson.model.StringParameterDefinition',
                         defaultValue: ""
-                    ],
-                    [
+		    ],
+		    [
                         name: 'DRY_RUN',
                         description: 'Only do dry run test and exit\nDoes not send anything over the bus',
                         $class: 'BooleanParameterDefinition',
@@ -102,25 +102,25 @@ node {
         currentBuild.displayName += "- ${params.NAME}"
         if (params.DRY_RUN) {
             currentBuild.displayName += " (dry-run)"
-            currentBuild.description = "[DRY RUN]"
+            currentBuild.description += "[DRY RUN]"
         }
 
-        if ( !env.JOB_NAME.startsWith("signing-jobs/") ) {
-            requestIdSuffix = "-test"
-        } else {
-            requestIdSuffix = ""
-        }
+	if ( !env.JOB_NAME.startsWith("signing-jobs/") ) {
+	    requestIdSuffix = "-test"
+	} else {
+	    requestIdSuffix = ""
+	}
 
         wrap([$class: 'BuildUser']) {
-            def buildUserId = (env.BUILD_USER_ID == null) ? "automated-process" : env.BUILD_USER_ID
-            echo "Submitting ${noop} signing requests as user: ${buildUserId}"
+            echo "Submitting signing requests as user: ${env.BUILD_USER_ID}"
 
             dir(workDir) {
+
                 withCredentials([file(credentialsId: 'msg-openshift-art-signatory-prod.crt', variable: 'busCertificate'),
                                  file(credentialsId: 'msg-openshift-art-signatory-prod.key', variable: 'busKey')]) {
                     // ######################################################################
                     def baseUmbParams = buildlib.cleanWhitespace("""
-                                --requestor "${buildUserId}" --sig-keyname ${params.KEY_NAME}
+                                --requestor "${env.BUILD_USER_ID}" --sig-keyname ${params.KEY_NAME}
                                 --release-name "${params.NAME}" --client-cert ${busCertificate}
                                 --client-key ${busKey} --env ${params.ENV}
                             """)
@@ -133,13 +133,9 @@ node {
                          """)
 
                         echo "Submitting OpenShift Payload JSON claim signature request"
-                        retry(3) {
-                            timeout(time: 3, unit: 'MINUTES') {
-                                commonlib.shell(
-                                    script: "../umb_producer.py json-digest ${openshiftJsonSignParams}"
-                                )
-                            }
-                        }
+                        commonlib.shell(
+                            script: "../umb_producer.py json-digest ${openshiftJsonSignParams}"
+                        )
 
                         // ######################################################################
 
@@ -149,13 +145,10 @@ node {
                         """)
 
                         echo "Submitting OpenShift sha256 message-digest signature request"
-                        retry(3) {
-                            timeout(time: 3, unit: 'MINUTES') {
-                                commonlib.shell(
-                                    script: "../umb_producer.py message-digest ${openshiftSha256SignParams}"
-                                )
-                            }
-                        }
+                        commonlib.shell(
+                            script: "../umb_producer.py message-digest ${openshiftSha256SignParams}"
+                        )
+
                     } else if ( params.PRODUCT == 'rhcos' ) {
                         def rhcosSha256SignParams = buildlib.cleanWhitespace("""
                             ${baseUmbParams} --product rhcos ${noop} --arch ${params.ARCH}
@@ -163,14 +156,10 @@ node {
                         """)
 
                         echo "Submitting RHCOS sha256 message-digest signature request"
-                        retry(3) {
-                            timeout(time: 3, unit: 'MINUTES') {
-                                res = commonlib.shell(
-                                    returnAll: true,
-                                    script: "../umb_producer.py message-digest ${rhcosSha256SignParams}"
-                                )
-                            }
-                        }
+                        res = commonlib.shell(
+                            returnAll: true,
+                            script: "../umb_producer.py message-digest ${rhcosSha256SignParams}"
+                        )
                     }
                 }
             }
@@ -296,9 +285,9 @@ node {
                             }
                         }
                     } else if ( params.PRODUCT == 'rhcos') {
-                        sshagent(["openshift-bot"]) {
-                            def name_parts = params.NAME.split('\\.')
-                            def nameXY = "${name_parts[0]}.${name_parts[1]}"
+			sshagent(["openshift-bot"]) {
+			    def name_parts = params.NAME.split('\\.')
+			    def nameXY = "${name_parts[0]}.${name_parts[1]}"
                             def mirrorReleasePath = "openshift-v4/${params.ARCH}/dependencies/rhcos/${nameXY}/${params.NAME}"
                             sh "rsync -avzh -e \"ssh -o StrictHostKeyChecking=no\" sha256sum.txt.sig ${mirrorTarget}:/srv/pub/${mirrorReleasePath}/sha256sum.txt.sig"
                             mirror_result = buildlib.invoke_on_use_mirror("push.pub.sh", mirrorReleasePath)
@@ -307,7 +296,7 @@ node {
                                 error("Error running signed artifact sync push.pub.sh:\n${mirror_result}")
                             }
                         }
-                    }
+		    }
                 } finally {
                     echo "Archiving artifacts in jenkins:"
                     commonlib.safeArchiveArtifacts([
@@ -322,12 +311,12 @@ node {
     }
 
     stage('log sync'){
-        if ( !params.DRY_RUN ) {
+	if ( !params.DRY_RUN ) {
             buildArtifactPath = env.WORKSPACE.replaceFirst('/working/', '/builds/')
             dirName = buildArtifactPath.split('/')[-1]
             sh "/bin/rsync --inplace -avzh ${buildArtifactPath}/[0-9]* /mnt/art-build-artifacts/signing-jobs/${dirName}"
-        } else {
-            echo("DRY-RUN, not syncing logs")
-        }
+	} else {
+	    echo("DRY-RUN, not syncing logs")
+	}
     }
 }
