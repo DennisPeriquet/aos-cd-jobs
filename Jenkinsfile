@@ -102,7 +102,7 @@ node {
         currentBuild.displayName += "- ${params.NAME}"
         if (params.DRY_RUN) {
             currentBuild.displayName += " (dry-run)"
-            currentBuild.description += "[DRY RUN]"
+            currentBuild.description = "[DRY RUN]"
         }
 
         if ( !env.JOB_NAME.startsWith("signing-jobs/") ) {
@@ -113,7 +113,7 @@ node {
 
         wrap([$class: 'BuildUser']) {
             def buildUserId = (env.BUILD_USER_ID == null) ? "automated-process" : env.BUILD_USER_ID
-            echo "Submitting signing requests as user: ${buildUserId}"
+            echo "Submitting ${noop} signing requests as user: ${buildUserId}"
 
             dir(workDir) {
                 withCredentials([file(credentialsId: 'msg-openshift-art-signatory-prod.crt', variable: 'busCertificate'),
