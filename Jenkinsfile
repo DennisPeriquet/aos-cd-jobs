@@ -4,6 +4,23 @@ node {
     checkout scm
     def buildlib = load("pipeline-scripts/buildlib.groovy")
     def commonlib = buildlib.commonlib
+    commonlib.describeJob("sign-artifacts", """
+        --------------------------------------------------------
+        Sign OCP4 release image / clients and publish signatures
+        --------------------------------------------------------
+        Timing: The "release" job runs this after a release is accepted.
+        Can be run manually if that fails.
+
+        See https://github.com/openshift/art-docs/blob/master/4.y.z-stream.md#sign-the-release
+
+        The shasum file for the clients is signed and signatures published next
+        to the shasum file itself.
+            http://mirror.openshift.com/pub/openshift-v4/<arch>/clients/ocp/
+        The release image shasum is signed and the signature published both on
+        Google Cloud Storage and mirror:
+            http://mirror.openshift.com/pub/openshift-v4/signatures/openshift/
+    """)
+
 
     // Expose properties for a parameterized build
     properties(
@@ -11,76 +28,68 @@ node {
             [
                 $class: 'ParametersDefinitionProperty',
                 parameterDefinitions: [
-                    [
+                    choice(
                         name: 'ARCH',
                         description: 'The architecture for this release',
-                        $class: 'hudson.model.ChoiceParameterDefinition',
                         choices: [
                             "x86_64",
                             "s390x",
                             "ppc64le",
                         ].join("\n"),
-                    ],
-                    [
+                    ),
+                    string(
                         name: 'NAME',
                         description: 'Release name (e.g. 4.2.0)',
-                        $class: 'hudson.model.StringParameterDefinition',
                         defaultValue: ""
-                    ],
-                    [
+                    ),
+                    string(
                         name: 'SIGNATURE_NAME',
                         description: 'Signature name\nStart with signature-1 and only increment if adding an additional signature to a release!',
-                        $class: 'hudson.model.StringParameterDefinition',
                         defaultValue: "signature-1"
-                    ],
-                    [
+                    ),
+                    choice(
                         name: 'CLIENT_TYPE',
                         description: 'Which type is it, stable (ocp) or dev (ocp-dev-preview)?',
-                        $class: 'hudson.model.ChoiceParameterDefinition',
                         choices: [
                             "ocp",
                             "ocp-dev-preview",
                         ].join("\n"),
-                    ],                    [
+                    ),
+                    choice(
                         name: 'PRODUCT',
                         description: 'Which product to sign',
-                        $class: 'hudson.model.ChoiceParameterDefinition',
                         choices: [
                             "openshift",
                             "rhcos",
                         ].join("\n"),
-                    ],
-                    [
+                    ),
+                    choice(
                         name: 'ENV',
                         description: 'Which environment to sign in',
-                        $class: 'hudson.model.ChoiceParameterDefinition',
                         choices: [
                             "stage",
                             "prod",
                         ].join("\n"),
-                    ],
-                    [
+                    ),
+                    choice(
                         name: 'KEY_NAME',
                         description: 'Which key to sign with\nIf ENV==stage everything becomes "test"\nFor prod we currently use "redhatrelease2"',
-                        $class: 'hudson.model.ChoiceParameterDefinition',
                         choices: [
                             "test",
                             "beta2",
                             "redhatrelease2",
                         ].join("\n"),
-                    ],
-                    [
+                    ),
+                    string(
                         name: 'DIGEST',
                         description: 'The digest of the release. Example value: "sha256:f28cbabd1227352fe704a00df796a4511880174042dece96233036a10ac61639"\nCan be taken from the Release job.',
-                        $class: 'hudson.model.StringParameterDefinition',
                         defaultValue: ""
-                    ],
-                    [
+                    ),
+                    booleanParam(
                         name: 'DRY_RUN',
                         description: 'Only do dry run test and exit\nDoes not send anything over the bus',
-                        $class: 'BooleanParameterDefinition',
                         defaultValue: false
-                    ],
+                    ),
                     commonlib.mockParam(),
                 ]
             ],
@@ -98,7 +107,6 @@ node {
 
     stage('sign-artifacts') {
         def noop = params.DRY_RUN ? " --noop" : " "
-        def digest = params.DIGEST ? "--digest ${params.DIGEST}" : ""
 
         currentBuild.displayName += "- ${params.NAME}"
         if (params.DRY_RUN) {
@@ -112,9 +120,11 @@ node {
             requestIdSuffix = ""
         }
 
-        if ( !(env.DIGEST ==~ /sha256:[0-9a-f]{64}/) ) {
+        def digest = commonlib.sanitizeInvisible(params.DIGEST).trim()
+        def digestParam = digest ? "--digest ${digest}" : ""
+        if ( !(digest ==~ /sha256:[0-9a-f]{64}/) ) {
             currentBuild.description = "bad digest"
-            error("The digest does not look like 'sha256:hex64'. If you copied it from jenkins job output, it might include invisible unicode.")
+            error("The digest does not look like 'sha256:hex64'")
         }
 
         wrap([$class: 'BuildUser']) {
@@ -138,7 +148,7 @@ node {
                         // ######################################################################
                         def openshiftJsonSignParams = buildlib.cleanWhitespace("""
                              ${baseUmbParams} --product openshift --arch ${params.ARCH} --client-type ${params.CLIENT_TYPE}
-                             --request-id 'openshift-json-digest-${env.BUILD_ID}${requestIdSuffix}' ${digest} ${noop}
+                             --request-id 'openshift-json-digest-${env.BUILD_ID}${requestIdSuffix}' ${digestParam} ${noop}
                          """)
 
                         echo "Submitting OpenShift Payload JSON claim signature request"
