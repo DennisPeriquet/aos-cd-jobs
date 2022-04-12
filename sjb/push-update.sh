@@ -67,6 +67,7 @@ function update_config() {
 
 for job_config in "${job_configs[@]}"; do
 	update_config "${job_config}" &
+        sleep 1
 done
 
 for job in $( jobs -p ); do
