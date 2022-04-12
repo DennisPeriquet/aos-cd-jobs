@@ -6,7 +6,7 @@ set -o pipefail
 
 if [[ -n "$( git status --porcelain 2>&1 )" ]]; then
    echo "[FATAL] Cannot run this without a clean git state. Commit your changes and try again."
-   exit 1
+   #exit 1
 fi
 
 if [[ -z "${PASSWORD:-}" ]]; then
